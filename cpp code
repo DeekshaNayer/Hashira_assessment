@@ -1,0 +1,136 @@
+#include <iostream>
+#include <vector>
+#include <cstdlib>
+#include <ctime>
+#include <map>
+
+using namespace std;
+typedef long long ll;
+typedef pair<int, ll> Share;
+
+// Polynomial evaluation at x
+ll evaluatePolynomial(const vector<ll>& coeffs, int x) {
+    ll result = 0, power = 1;
+    for (ll c : coeffs) {
+        result += c * power;
+        power *= x;
+    }
+    return result;
+}
+
+// Generate polynomial of degree k-1 with secret as a0
+vector<ll> generatePolynomial(int k, int secret) {
+    vector<ll> coeffs(k);
+    coeffs[0] = secret;
+    for (int i = 1; i < k; ++i)
+        coeffs[i] = rand() % 10 + 1;  // random coefficients
+    return coeffs;
+}
+
+// Generate combinations of n choose k
+void combinations(int n, int k, vector<vector<int>>& result, vector<int>& temp, int start = 0) {
+    if (temp.size() == k) {
+        result.push_back(temp);
+        return;
+    }
+    for (int i = start; i < n; ++i) {
+        temp.push_back(i);
+        combinations(n, k, result, temp, i + 1);
+        temp.pop_back();
+    }
+}
+
+// Lagrange Interpolation at x = 0 to recover secret
+ll lagrangeInterpolation(const vector<Share>& shares) {
+    ll secret = 0;
+    int k = shares.size();
+    for (int i = 0; i < k; ++i) {
+        ll xi = shares[i].first;
+        ll yi = shares[i].second;
+        ll num = 1, den = 1;
+        for (int j = 0; j < k; ++j) {
+            if (i != j) {
+                ll xj = shares[j].first;
+                num *= -xj;
+                den *= (xi - xj);
+            }
+        }
+        secret += (yi * num) / den;
+    }
+    return secret;
+}
+
+// Simulate random corruption in some shares
+void randomlyCorruptShares(vector<Share>& shares, int corruptCount) {
+    int n = shares.size();
+    for (int i = 0; i < corruptCount; ++i) {
+        int idx = rand() % n;
+        shares[idx].second = rand() % 1000 + 500; // replace with garbage
+    }
+}
+
+int main() {
+    srand(time(0));
+
+    int secret = 123;
+    int n = 6, k = 3;
+
+    // Step 1: Generate secret polynomial
+    vector<ll> coeffs = generatePolynomial(k, secret);
+    cout << "Original Polynomial: ";
+    for (int i = 0; i < k; ++i) {
+        cout << coeffs[i];
+        if (i > 0) cout << "x^" << i;
+        if (i != k - 1) cout << " + ";
+    }
+    cout << "\n";
+
+    // Step 2: Generate n shares
+    vector<Share> shares;
+    for (int x = 1; x <= n; ++x)
+        shares.push_back({x, evaluatePolynomial(coeffs, x)});
+
+    // Step 3: Randomly corrupt up to (n - k) shares
+    int maxCorrupt = n - k; // keep recoverability
+    randomlyCorruptShares(shares, maxCorrupt);
+
+    cout << "\nShares (after possible corruption):\n";
+    for (int i = 0; i < n; ++i)
+        cout << "(" << shares[i].first << ", " << shares[i].second << ")\n";
+
+    // Step 4: Try all nCk combinations
+    vector<vector<int>> combs;
+    vector<int> temp;
+    combinations(n, k, combs, temp);
+
+    map<ll, int> secretCount;
+    map<ll, vector<vector<int>>> validSets;
+
+    for (auto& indices : combs) {
+        vector<Share> sub;
+        for (int idx : indices) sub.push_back(shares[idx]);
+        ll s = lagrangeInterpolation(sub);
+        secretCount[s]++;
+        validSets[s].push_back(indices);
+    }
+
+    // Step 5: Find most common secret
+    ll recoveredSecret = -1;
+    int maxFreq = 0;
+    for (auto& entry : secretCount) {
+        if (entry.second > maxFreq) {
+            recoveredSecret = entry.first;
+            maxFreq = entry.second;
+        }
+    }
+
+    // Step 6: Output results
+    cout << "Recovered Secret: " << recoveredSecret << " (appeared " << maxFreq << " times)\n";
+    cout << "Valid combinations (1-based indices):\n";
+    for (auto& indices : validSets[recoveredSecret]) {
+        for (int idx : indices) cout << idx + 1 << " ";
+        cout << endl;
+    }
+
+    return 0;
+}
